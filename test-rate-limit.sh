@@ -7,12 +7,15 @@ echo -n "URL: "
 read URL
 
 # Prompt for sleep time between requests
-echo -n "Time between requests (in seconds, e.g., 0.1): "
+echo -n "Enter sleep time between requests (in seconds, e.g., 0.1): "
 read SLEEP
 
 # Prompt for the number of requests to send
-echo -n "Number of requests: "
+echo -n "Enter the number of requests to send: "
 read REQUESTS
+
+# Set the maximum timeout for curl in seconds (adjust as needed)
+CURL_TIMEOUT=10
 
 # Ensure that SLEEP and REQUESTS are valid numeric values
 if ! [[ "$SLEEP" =~ ^[0-9]+(\.[0-9]+)?$ ]] || ! [[ "$REQUESTS" =~ ^[0-9]+$ ]]; then
@@ -20,49 +23,47 @@ if ! [[ "$SLEEP" =~ ^[0-9]+(\.[0-9]+)?$ ]] || ! [[ "$REQUESTS" =~ ^[0-9]+$ ]]; t
     exit 1
 fi
 
-echo "Testing rate limit using $REQUESTS requests, with a sleep of $SLEEP seconds."
+echo "Testing rate limit using $REQUESTS requests to $URL, with a sleep of $SLEEP seconds."
 
 # Initialize counters for successful and non-successful responses
 SUCCESS_COUNT=0
 NON_SUCCESS_COUNT=0
 
-# Define the width of the progress bar
-PROGRESS_BAR_WIDTH=50
+# Function to send a single request
+send_request() {
+    HTTP_STATUS=$(curl -s --max-time $CURL_TIMEOUT -o /dev/null -w "%{http_code}" "$URL")
 
-# Calculate the number of requests per progress step
-REQUESTS_PER_STEP=$((REQUESTS / PROGRESS_BAR_WIDTH))
-
-# Loop to send the requests
-for ((i=1; i<=$REQUESTS; i++)); do
-    # Use curl to send the request and capture the HTTP status code
-    HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
-
-    # Check if the response is HTTP 200 (success)
     if [ "$HTTP_STATUS" = "200" ]; then
         SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
     else
         NON_SUCCESS_COUNT=$((NON_SUCCESS_COUNT + 1))
     fi
+}
 
-    # Calculate the current progress
-    CURRENT_PROGRESS=$((i / REQUESTS_PER_STEP))
-
-    # Print the progress bar
-    printf "\rProgress: ["
-    for ((j=1; j<=$PROGRESS_BAR_WIDTH; j++)); do
-        if [ $j -le $CURRENT_PROGRESS ]; then
-            printf "#"
-        else
-            printf " "
-        fi
+# Function to update the progress bar
+update_progress() {
+    PROGRESS=$((i * 100 / REQUESTS))
+    PROGRESS_BAR="["
+    for ((j=0; j<PROGRESS; j++)); do
+        PROGRESS_BAR+="#"
     done
-    printf "] %3d%% - Successful: %d - Non-Successful: %d" $((CURRENT_PROGRESS * 2)) "$SUCCESS_COUNT" "$NON_SUCCESS_COUNT"
+    for ((j=PROGRESS; j<100; j++)); do
+        PROGRESS_BAR+=" "
+    done
+    PROGRESS_BAR+="] $PROGRESS%"
 
-    # Sleep for the specified duration
-    sleep "$SLEEP"
+    # Print the updated progress bar on the same line
+    echo -ne "\r$PROGRESS_BAR"
+}
+
+# Use a loop to send requests
+for ((i=1; i<=$REQUESTS; i++)); do
+    send_request  # Send the request
+    update_progress  # Update the progress bar
+    sleep "$SLEEP"  # Sleep for the specified duration
 done
 
-# Print a newline character to end the status bar line
+# Print a newline to end the progress line
 echo ""
 
 # Print the final results
